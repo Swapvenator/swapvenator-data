@@ -483,42 +483,45 @@ def run():
         merged[sym].update(hfm_data.get(sym, {}))
 
     brokers = set(b for sym in merged.values() for b in sym.keys())
+    total = sum(len(v) for v in merged.values())
+    print(f"\n✓ Done — {len(merged)} symbols, {len(brokers)} brokers, {total} entries")
+    print(f"  Brokers: {sorted(brokers)}")
+
+    if len(brokers) < 7:
+        print(f"  ⚠ Only {len(brokers)} brokers — skipping swaps.json update")
+        send_alert_email(cbf_failed, cbf_brokers_with_data, brokers)
+        return
+
     output = {
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "sources": sorted(brokers),
         "swaps": merged,
     }
-
     with open("swaps.json", "w") as f:
         json.dump(output, f, indent=2)
-
-    total = sum(len(v) for v in merged.values())
-    print(f"\n✓ Done — {len(merged)} symbols, {len(brokers)} brokers, {total} entries")
-    print(f"  Brokers: {sorted(brokers)}")
-
-    if cbf_failed > 4:
-        send_alert_email(cbf_failed, cbf_brokers_with_data)
+    print("  swaps.json updated")
 
 
-def send_alert_email(cbf_failed, cbf_brokers_with_data):
+def send_alert_email(cbf_failed, cbf_brokers_with_data, brokers):
     import os
     api_key = os.environ.get("RESEND_API_KEY")
     if not api_key:
         print("  [alert] RESEND_API_KEY not set, skipping email alert")
         return
 
-    working = ", ".join(sorted(cbf_brokers_with_data)) if cbf_brokers_with_data else "none"
+    working_cbf = ", ".join(sorted(cbf_brokers_with_data)) if cbf_brokers_with_data else "none"
+    all_brokers = ", ".join(sorted(brokers)) if brokers else "none"
     body = (
         f"SwapVenator scraper alert — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}\n\n"
-        f"{cbf_failed} out of {9} CBF brokers returned no data.\n"
-        f"CBF brokers with data: {working}\n\n"
-        f"CashbackForex API may be down or blocking the scraper.\n"
+        f"Only {len(brokers)} broker(s) returned data: {all_brokers}\n\n"
+        f"{cbf_failed}/9 CBF brokers failed. CBF brokers with data: {working_cbf}\n\n"
+        f"swaps.json was NOT updated to protect existing data.\n"
         f"Check the GitHub Actions logs for details."
     )
     payload = json.dumps({
         "from": "SwapVenator Alert <alert@swapvenator.io>",
         "to": ["info@swapvenator.io"],
-        "subject": f"[SwapVenator] Scraper alert — {cbf_failed}/9 CBF brokers failed",
+        "subject": f"[SwapVenator] Scraper alert — only {len(brokers)} brokers, file NOT updated",
         "text": body,
     }).encode()
 
@@ -529,6 +532,7 @@ def send_alert_email(cbf_failed, cbf_brokers_with_data):
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (compatible; SwapVenator/1.0)",
             },
             method="POST",
         )
