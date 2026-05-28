@@ -18,6 +18,12 @@ import time
 import urllib.request
 from datetime import datetime, timezone
 
+try:
+    from curl_cffi import requests as cffi_requests
+    _USE_CURL_CFFI = True
+except ImportError:
+    _USE_CURL_CFFI = False
+
 # ─────────────────────────────────────────────────────
 # SYMBOL CONFIG
 # ─────────────────────────────────────────────────────
@@ -128,22 +134,29 @@ def fetch_cbf_page(cbf_id, group, page=1, retries=3):
     url = (f"{CBF_BASE}/{cbf_id}"
            f"?currentPage={page}&countPerPage=100&search=&group={group_encoded}")
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "en-US,en;q=0.9",
         "Origin": "https://fxverify.com",
         "Referer": "https://fxverify.com/",
         "Cache-Control": "no-cache",
         "Pragma": "no-cache",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "cross-site",
     }
     for attempt in range(retries):
         try:
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                data = json.loads(resp.read().decode())
+            if _USE_CURL_CFFI:
+                resp = cffi_requests.get(url, headers=headers, impersonate="chrome110", timeout=15)
+                resp.raise_for_status()
+                data = resp.json()
+            else:
+                req = urllib.request.Request(url, headers={
+                    **headers,
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    "Sec-Fetch-Dest": "empty",
+                    "Sec-Fetch-Mode": "cors",
+                    "Sec-Fetch-Site": "cross-site",
+                })
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    data = json.loads(r.read().decode())
             return data.get("swapRates", {}).get("swapRates", [])
         except Exception as e:
             print(f"    CBF error [{cbf_id}] group={group} page={page} attempt {attempt+1}: {e}")
