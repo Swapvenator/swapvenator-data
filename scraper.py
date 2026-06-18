@@ -483,7 +483,7 @@ def run():
     print(f"\n✓ Done — {len(merged)} symbols, {len(brokers)} brokers, {total} entries")
     print(f"  Brokers: {sorted(brokers)}")
 
-    if len(brokers) < 7:
+    if len(brokers) < 6:
         print(f"  ⚠ Only {len(brokers)} brokers — skipping swaps.json update")
         send_alert_email(cbf_failed, cbf_brokers_with_data, brokers)
         return
